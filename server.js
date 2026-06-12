@@ -196,6 +196,253 @@ function drawOne(id) {
   };
 }
 
+// ===== Live tournament tracking (football-data.org) =====
+// Set FOOTBALL_DATA_TOKEN in the environment (free key from football-data.org).
+// One request fetches every World Cup match; we cache it so we stay well within
+// the free tier's rate limit no matter how many people open the results page.
+const FD_TOKEN = process.env.FOOTBALL_DATA_TOKEN || process.env.FD_TOKEN || '';
+const FD_COMPETITION = process.env.FOOTBALL_DATA_COMPETITION || 'WC';
+const FD_BASE = 'https://api.football-data.org/v4';
+const FD_CACHE_MS = 60 * 1000;
+
+// Points a team accrues as it progresses; a person's score sums across their teams.
+const SCORING = {
+  groupWin: 3,
+  groupDraw: 1,
+  reachR32: 4, // i.e. advanced out of the group
+  reachR16: 6,
+  reachQF: 8,
+  reachSF: 10,
+  reachFinal: 12,
+  champion: 15,
+};
+
+// football-data stage codes -> our ordered ladder.
+const STAGES = [
+  { key: 'GROUP_STAGE', label: 'Group stage', order: 0, bonus: 0 },
+  { key: 'LAST_32', label: 'Round of 32', order: 1, bonus: SCORING.reachR32 },
+  { key: 'LAST_16', label: 'Round of 16', order: 2, bonus: SCORING.reachR16 },
+  { key: 'QUARTER_FINALS', label: 'Quarter-final', order: 3, bonus: SCORING.reachQF },
+  { key: 'SEMI_FINALS', label: 'Semi-final', order: 4, bonus: SCORING.reachSF },
+  { key: 'THIRD_PLACE', label: 'Third-place play-off', order: 5, bonus: 0 },
+  { key: 'FINAL', label: 'Final', order: 6, bonus: SCORING.reachFinal },
+];
+const STAGE_BY_KEY = new Map(STAGES.map((s) => [s.key, s]));
+
+// Map football-data team names to our country names (accent/wording differences).
+function normalizeName(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+const COUNTRY_BY_NORM = new Map(COUNTRIES.map((c) => [normalizeName(c.name), c]));
+const NAME_ALIASES = {
+  unitedstates: 'USA',
+  usa: 'USA',
+  korearepublic: 'South Korea',
+  republicofkorea: 'South Korea',
+  iriran: 'Iran',
+  cotedivoire: 'Ivory Coast',
+  turkiye: 'Turkey',
+  czechia: 'Czechia',
+};
+function matchCountry(apiName) {
+  const norm = normalizeName(apiName);
+  if (COUNTRY_BY_NORM.has(norm)) return COUNTRY_BY_NORM.get(norm);
+  if (NAME_ALIASES[norm]) return COUNTRY_BY_NAME_DIRECT(NAME_ALIASES[norm]);
+  return null;
+}
+const COUNTRY_BY_PLAIN = new Map(COUNTRIES.map((c) => [c.name, c]));
+function COUNTRY_BY_NAME_DIRECT(name) {
+  return COUNTRY_BY_PLAIN.get(name) || null;
+}
+
+let fdCache = { at: 0, matches: null };
+async function fetchMatches() {
+  // Dev/preview hook: load matches from a local JSON file instead of the live API.
+  if (process.env.FD_MOCK_FILE) {
+    try {
+      const raw = await readFile(process.env.FD_MOCK_FILE, 'utf8');
+      const json = JSON.parse(raw);
+      fdCache = { at: Date.now(), matches: json.matches || [] };
+      return { matches: fdCache.matches };
+    } catch (e) {
+      return { error: 'mock_unreadable' };
+    }
+  }
+  if (!FD_TOKEN) return { error: 'not_configured' };
+  const now = Date.now();
+  if (fdCache.matches && now - fdCache.at < FD_CACHE_MS) return { matches: fdCache.matches };
+  try {
+    const resp = await fetch(`${FD_BASE}/competitions/${FD_COMPETITION}/matches`, {
+      headers: { 'X-Auth-Token': FD_TOKEN },
+    });
+    if (!resp.ok) {
+      // Serve stale data on transient errors rather than going blank.
+      if (fdCache.matches) return { matches: fdCache.matches, stale: true };
+      return { error: `api_${resp.status}` };
+    }
+    const json = await resp.json();
+    fdCache = { at: now, matches: json.matches || [] };
+    return { matches: fdCache.matches };
+  } catch (e) {
+    if (fdCache.matches) return { matches: fdCache.matches, stale: true };
+    return { error: 'api_unreachable' };
+  }
+}
+
+// Crunch raw matches + the roster into a results payload for the page.
+function computeTournament(matches) {
+  // team(name) -> owner participant name
+  const rows = db.prepare('SELECT id, name FROM participants ORDER BY id ASC').all();
+  const assignments = db.prepare('SELECT participant_id, country FROM assignments').all();
+  const nameById = new Map(rows.map((r) => [r.id, r.name]));
+  const ownerByCountry = new Map();
+  for (const a of assignments) ownerByCountry.set(a.country, nameById.get(a.participant_id));
+
+  // Index matches per team (by our country name).
+  const perTeam = new Map(); // country name -> { matches:[], stagesReached:Set, ... }
+  const ensure = (c) => {
+    if (!perTeam.has(c.name)) perTeam.set(c.name, { country: c, matches: [] });
+    return perTeam.get(c.name);
+  };
+
+  const knockoutTeams = new Set(); // teams that appear in any knockout match (bracket drawn)
+  const normMatches = [];
+  for (const m of matches) {
+    const home = matchCountry(m.homeTeam?.name);
+    const away = matchCountry(m.awayTeam?.name);
+    const stage = STAGE_BY_KEY.get(m.stage) || { key: m.stage, label: m.stage, order: -1, bonus: 0 };
+    const nm = {
+      id: m.id,
+      utcDate: m.utcDate,
+      status: m.status, // SCHEDULED|TIMED|IN_PLAY|PAUSED|FINISHED|...
+      stage,
+      home,
+      away,
+      homeName: m.homeTeam?.name,
+      awayName: m.awayTeam?.name,
+      homeScore: m.score?.fullTime?.home,
+      awayScore: m.score?.fullTime?.away,
+      winner: m.score?.winner, // HOME_TEAM|AWAY_TEAM|DRAW|null
+    };
+    normMatches.push(nm);
+    for (const c of [home, away]) {
+      if (!c) continue;
+      ensure(c).matches.push(nm);
+      if (stage.order >= 1) knockoutTeams.add(c.name);
+    }
+  }
+
+  const bracketDrawn = knockoutTeams.size > 0;
+
+  function teamStatus(name) {
+    const t = perTeam.get(name);
+    if (!t) return { points: 0, stageLabel: 'Awaiting fixtures', stageOrder: 0, eliminated: false, playingNow: false, champion: false };
+    let points = 0;
+    let furthest = 0;
+    let playingNow = false;
+    let lostKnockout = false;
+    let champion = false;
+    let allGroupFinished = true;
+    let hasGroup = false;
+
+    for (const m of t.matches) {
+      if (m.status === 'IN_PLAY' || m.status === 'PAUSED') playingNow = true;
+      furthest = Math.max(furthest, m.stage.order);
+
+      const isHome = m.home && m.home.name === name;
+      if (m.stage.key === 'GROUP_STAGE') {
+        hasGroup = true;
+        if (m.status === 'FINISHED') {
+          if (m.winner === 'DRAW') points += SCORING.groupDraw;
+          else if ((m.winner === 'HOME_TEAM' && isHome) || (m.winner === 'AWAY_TEAM' && !isHome))
+            points += SCORING.groupWin;
+        } else {
+          allGroupFinished = false;
+        }
+      } else if (m.status === 'FINISHED') {
+        const won = (m.winner === 'HOME_TEAM' && isHome) || (m.winner === 'AWAY_TEAM' && !isHome);
+        if (!won && m.winner && m.winner !== 'DRAW') lostKnockout = true;
+        if (m.stage.key === 'FINAL' && won) champion = true;
+      }
+    }
+
+    // Stage-reached bonuses (cumulative up the ladder).
+    for (const s of STAGES) if (s.order >= 1 && s.order <= furthest) points += s.bonus;
+    if (champion) points += SCORING.champion;
+
+    const reachedKnockout = furthest >= 1;
+    let eliminated = false;
+    if (champion) eliminated = false;
+    else if (lostKnockout) eliminated = true;
+    else if (!reachedKnockout && hasGroup && allGroupFinished && bracketDrawn && !knockoutTeams.has(name))
+      eliminated = true;
+
+    const stageLabel = STAGES.find((s) => s.order === furthest)?.label || 'Group stage';
+    return { points, stageLabel, stageOrder: furthest, eliminated, playingNow, champion };
+  }
+
+  // Leaderboard
+  const leaderboard = rows
+    .map((p) => {
+      const teams = assignments
+        .filter((a) => a.participant_id === p.id)
+        .map((a) => {
+          const c = COUNTRY_BY_PLAIN.get(a.country);
+          const st = teamStatus(a.country);
+          return { name: a.country, flag: c?.flag || '', rank: c?.rank, ...st };
+        })
+        .sort((x, y) => y.points - x.points || (x.rank || 99) - (y.rank || 99));
+      const points = teams.reduce((s, t) => s + t.points, 0);
+      const allOut = teams.length > 0 && teams.every((t) => t.eliminated);
+      const anyChampion = teams.some((t) => t.champion);
+      const bestStage = teams.reduce((m, t) => Math.max(m, t.stageOrder), 0);
+      const playingNow = teams.some((t) => t.playingNow);
+      return { name: p.name, points, teams, status: allOut ? 'out' : 'in', anyChampion, bestStage, playingNow };
+    })
+    .sort((a, b) => b.points - a.points || b.bestStage - a.bestStage || a.name.localeCompare(b.name));
+
+  // annotate a match side with flag + owner
+  const side = (country, rawName, score) => ({
+    name: country?.name || rawName || 'TBD',
+    flag: country?.flag || '',
+    owner: country ? ownerByCountry.get(country.name) || null : null,
+    score: score ?? null,
+  });
+  const dressMatch = (m) => ({
+    id: m.id,
+    utcDate: m.utcDate,
+    status: m.status,
+    stageLabel: m.stage.label,
+    home: side(m.home, m.homeName, m.homeScore),
+    away: side(m.away, m.awayName, m.awayScore),
+  });
+  const involvesOwned = (m) =>
+    (m.home && ownerByCountry.has(m.home.name)) || (m.away && ownerByCountry.has(m.away.name));
+
+  const live = normMatches
+    .filter((m) => m.status === 'IN_PLAY' || m.status === 'PAUSED')
+    .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
+    .map(dressMatch);
+
+  const recent = normMatches
+    .filter((m) => m.status === 'FINISHED')
+    .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
+    .slice(0, 12)
+    .map(dressMatch);
+
+  const upcoming = normMatches
+    .filter((m) => (m.status === 'SCHEDULED' || m.status === 'TIMED') && involvesOwned(m))
+    .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
+    .slice(0, 10)
+    .map(dressMatch);
+
+  return { leaderboard, live, recent, upcoming, totalMatches: matches.length };
+}
+
 // ----- HTTP helpers -----
 function sendJSON(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -256,6 +503,35 @@ async function handleApi(req, res, pathname) {
   // GET /api/state
   if (req.method === 'GET' && pathname === '/api/state') {
     return sendJSON(res, 200, buildState());
+  }
+
+  // GET /api/tournament -> live results, eliminations & points leaderboard
+  if (req.method === 'GET' && pathname === '/api/tournament') {
+    const result = await fetchMatches();
+    if (result.error === 'not_configured') {
+      return sendJSON(res, 200, {
+        configured: false,
+        message:
+          'Live results are not set up yet. Add a free football-data.org API key as the FOOTBALL_DATA_TOKEN environment variable.',
+      });
+    }
+    if (result.error) {
+      return sendJSON(res, 200, {
+        configured: true,
+        ok: false,
+        message: `Could not reach the football data service (${result.error}). It may be a rate limit — try again shortly.`,
+      });
+    }
+    const data = computeTournament(result.matches);
+    return sendJSON(res, 200, {
+      configured: true,
+      ok: true,
+      stale: !!result.stale,
+      lastUpdated: new Date(fdCache.at || Date.now()).toISOString(),
+      scoring: SCORING,
+      competition: FD_COMPETITION,
+      ...data,
+    });
   }
 
   // POST /api/participants  { name }

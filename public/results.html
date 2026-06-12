@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>📊 World Cup 2026 Sweepstake — Live Results & Leaderboard</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <h1>📊 Live Results & Leaderboard</h1>
+      <p class="sub">Who's still alive, who's playing now, and who's closing in on the cash 💰</p>
+      <nav class="topnav">
+        <a class="navlink" href="/">🎡 Draw</a>
+        <a class="navlink active" href="/results.html">📊 Live Results &amp; Leaderboard</a>
+      </nav>
+      <p id="updated" class="updated"></p>
+    </header>
+
+    <main class="results-layout">
+      <div id="notice" class="notice" hidden></div>
+
+      <!-- Live now -->
+      <section class="panel" id="live-panel" hidden>
+        <h2>🔴 Playing now</h2>
+        <div id="live" class="match-grid"></div>
+      </section>
+
+      <!-- Leaderboard -->
+      <section class="panel">
+        <h2>🏆 Leaderboard — who's closest to the $500</h2>
+        <ol id="leaderboard" class="leaderboard"></ol>
+      </section>
+
+      <div class="two-col">
+        <!-- Recent results -->
+        <section class="panel">
+          <h2>✅ Recent results</h2>
+          <div id="recent" class="match-list"></div>
+        </section>
+
+        <!-- Upcoming for owned teams -->
+        <section class="panel">
+          <h2>📅 Upcoming (your teams)</h2>
+          <div id="upcoming" class="match-list"></div>
+        </section>
+      </div>
+
+      <section class="panel scoring">
+        <h2>ℹ️ How points work</h2>
+        <p id="scoring-text"></p>
+      </section>
+    </main>
+
+    <script src="/results.js"></script>
+  </body>
+</html>
