@@ -1,0 +1,12 @@
+{
+  "name": "world-cup-spinner",
+  "version": "1.0.0",
+  "description": "Spin to assign 2026 World Cup countries to company employees. Prize: cash, sponsored by Jai (CEO) & G (Co-Founder).",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

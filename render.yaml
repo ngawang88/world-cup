@@ -1,0 +1,13 @@
+# Render Blueprint — deploys this as a free Node web service.
+# In Render: New + > Blueprint, point it at your GitHub repo, and it reads this file.
+services:
+  - type: web
+    name: world-cup-spinner
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      # node:sqlite runs without any flag on Node 24+, matching local dev.
+      - key: NODE_VERSION
+        value: "24"

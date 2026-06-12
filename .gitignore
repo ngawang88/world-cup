@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# SQLite database + backups (created at runtime, should not be published)
+world_cup.db
+world_cup.db-journal
+world_cup.db-wal
+world_cup.db-shm
+world_cup.backup-*.db
+
+# one-off scripts / logs / OS cruft
+add-sai.mjs
+*.log
+.DS_Store

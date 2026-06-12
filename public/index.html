@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>⚽ World Cup 2026 — Office Sweepstake Spinner</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <h1>⚽ World Cup 2026 Sweepstake</h1>
+      <p class="sub">All 48 teams split evenly &amp; fairly by strength (pot draw) — everyone gets a balanced mix, no repeats.</p>
+      <div id="sponsor" class="sponsor"></div>
+    </header>
+
+    <main class="layout">
+      <!-- LEFT: controls -->
+      <section class="panel controls">
+        <h2>1 · Add participants</h2>
+        <form id="add-form" class="add-form" autocomplete="off">
+          <input id="name-input" type="text" placeholder="Employee name…" maxlength="60" required />
+          <button type="submit" class="btn">Add</button>
+        </form>
+        <p id="add-error" class="error" role="alert"></p>
+
+        <h2>2 · Pick who's spinning</h2>
+        <select id="participant-select" class="select"></select>
+
+        <button id="spin-btn" class="btn btn-spin" disabled>🎡 SPIN!</button>
+        <button id="spin-all-btn" class="btn btn-fill" disabled>⚡ Fill remaining share</button>
+        <p id="spin-status" class="status"></p>
+
+        <div class="meta">
+          <span id="counter" class="counter"></span>
+          <div class="meta-btns">
+            <button id="print-btn" class="btn btn-ghost" title="Print the draw">🖨️ Print</button>
+            <button id="reset-btn" class="btn btn-ghost" title="Unassign everyone">Reset draws</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- CENTER: wheel -->
+      <section class="panel wheel-panel">
+        <div class="wheel-wrap">
+          <div class="pointer">▼</div>
+          <canvas id="wheel" width="520" height="520"></canvas>
+          <div id="wheel-empty" class="wheel-empty" hidden>All 48 countries assigned! 🎉</div>
+        </div>
+        <div id="result" class="result" hidden></div>
+      </section>
+
+      <!-- RIGHT: results -->
+      <section class="panel results">
+        <h2>Assignments</h2>
+        <ul id="assignment-list" class="assignment-list"></ul>
+      </section>
+    </main>
+
+    <div id="confetti-root" aria-hidden="true"></div>
+
+    <!-- Populated on demand; only this is visible when printing. -->
+    <div id="print-area" aria-hidden="true"></div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
