@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
 
@@ -62,6 +63,44 @@ db.exec(`
   );
 `);
 db.exec('PRAGMA foreign_keys = ON;');
+
+// If the database is empty and a seed.json exists, load the saved draw. This
+// keeps a deployed instance (whose disk may reset) populated with the real draw,
+// and never overwrites a database that already has people in it.
+function seedIfEmpty() {
+  const count = db.prepare('SELECT COUNT(*) AS c FROM participants').get().c;
+  if (count > 0) return;
+  const seedPath = join(__dirname, 'seed.json');
+  if (!existsSync(seedPath)) return;
+  let seed;
+  try {
+    seed = JSON.parse(readFileSync(seedPath, 'utf8'));
+  } catch {
+    console.error('seed.json is not valid JSON — skipping seed.');
+    return;
+  }
+  const insP = db.prepare('INSERT INTO participants (name) VALUES (?)');
+  const insA = db.prepare(
+    'INSERT OR IGNORE INTO assignments (participant_id, country, flag, assigned_at) VALUES (?, ?, ?, ?)'
+  );
+  const stamp = new Date().toISOString();
+  let people = 0;
+  let teams = 0;
+  for (const p of seed.participants || []) {
+    if (!p.name) continue;
+    const info = insP.run(p.name);
+    const pid = info.lastInsertRowid;
+    people++;
+    for (const countryName of p.countries || []) {
+      const c = COUNTRIES.find((x) => x.name === countryName);
+      if (!c) continue;
+      const r = insA.run(pid, c.name, c.flag, stamp);
+      if (r.changes) teams++;
+    }
+  }
+  console.log(`  🌱 Seeded draw from seed.json: ${people} participants, ${teams} teams.`);
+}
+seedIfEmpty();
 
 // ----- Data helpers -----
 // All 48 countries are split as evenly as possible across the participants.
