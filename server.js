@@ -8,35 +8,35 @@ import { dirname, join, extname, normalize } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 
-// ----- The 48-team field for the 2026 World Cup (hosts + likely qualifiers) -----
+// ----- The 48 teams that QUALIFIED for the 2026 World Cup (cross-checked Jun 2026) -----
 // `rank` is an approximate strength ranking (1 = most likely to win). It's used
 // to balance the draw into pots so nobody gets all the favourites or all the
 // underdogs. Tweak these numbers to match your own opinion of the teams.
 const COUNTRIES = [
-  { name: 'Argentina', flag: '🇦🇷', rank: 1 },   { name: 'France', flag: '🇫🇷', rank: 2 },
-  { name: 'Spain', flag: '🇪🇸', rank: 3 },       { name: 'England', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', rank: 4 },
+  { name: 'Argentina', flag: '🇦🇷', rank: 1 },   { name: 'Spain', flag: '🇪🇸', rank: 2 },
+  { name: 'France', flag: '🇫🇷', rank: 3 },      { name: 'England', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', rank: 4 },
   { name: 'Brazil', flag: '🇧🇷', rank: 5 },      { name: 'Portugal', flag: '🇵🇹', rank: 6 },
   { name: 'Netherlands', flag: '🇳🇱', rank: 7 }, { name: 'Belgium', flag: '🇧🇪', rank: 8 },
-  { name: 'Italy', flag: '🇮🇹', rank: 9 },       { name: 'Germany', flag: '🇩🇪', rank: 10 },
-  { name: 'Croatia', flag: '🇭🇷', rank: 11 },    { name: 'Morocco', flag: '🇲🇦', rank: 12 },
-  { name: 'Uruguay', flag: '🇺🇾', rank: 13 },    { name: 'Colombia', flag: '🇨🇴', rank: 14 },
-  { name: 'Switzerland', flag: '🇨🇭', rank: 15 },{ name: 'USA', flag: '🇺🇸', rank: 16 },
-  { name: 'Mexico', flag: '🇲🇽', rank: 17 },     { name: 'Japan', flag: '🇯🇵', rank: 18 },
-  { name: 'Senegal', flag: '🇸🇳', rank: 19 },    { name: 'Denmark', flag: '🇩🇰', rank: 20 },
-  { name: 'South Korea', flag: '🇰🇷', rank: 21 },{ name: 'Iran', flag: '🇮🇷', rank: 22 },
-  { name: 'Australia', flag: '🇦🇺', rank: 23 },  { name: 'Ecuador', flag: '🇪🇨', rank: 24 },
-  { name: 'Austria', flag: '🇦🇹', rank: 25 },    { name: 'Ukraine', flag: '🇺🇦', rank: 26 },
-  { name: 'Sweden', flag: '🇸🇪', rank: 27 },     { name: 'Serbia', flag: '🇷🇸', rank: 28 },
-  { name: 'Poland', flag: '🇵🇱', rank: 29 },     { name: 'Egypt', flag: '🇪🇬', rank: 30 },
-  { name: 'Nigeria', flag: '🇳🇬', rank: 31 },    { name: 'Ivory Coast', flag: '🇨🇮', rank: 32 },
-  { name: 'Norway', flag: '🇳🇴', rank: 33 },     { name: 'Canada', flag: '🇨🇦', rank: 34 },
-  { name: 'Peru', flag: '🇵🇪', rank: 35 },       { name: 'Chile', flag: '🇨🇱', rank: 36 },
-  { name: 'Tunisia', flag: '🇹🇳', rank: 37 },    { name: 'Cameroon', flag: '🇨🇲', rank: 38 },
-  { name: 'Algeria', flag: '🇩🇿', rank: 39 },    { name: 'Paraguay', flag: '🇵🇾', rank: 40 },
-  { name: 'Turkey', flag: '🇹🇷', rank: 41 },     { name: 'Costa Rica', flag: '🇨🇷', rank: 42 },
-  { name: 'Ghana', flag: '🇬🇭', rank: 43 },      { name: 'Qatar', flag: '🇶🇦', rank: 44 },
-  { name: 'Saudi Arabia', flag: '🇸🇦', rank: 45 },{ name: 'Panama', flag: '🇵🇦', rank: 46 },
-  { name: 'Jamaica', flag: '🇯🇲', rank: 47 },    { name: 'New Zealand', flag: '🇳🇿', rank: 48 },
+  { name: 'Germany', flag: '🇩🇪', rank: 9 },     { name: 'Croatia', flag: '🇭🇷', rank: 10 },
+  { name: 'Morocco', flag: '🇲🇦', rank: 11 },    { name: 'Colombia', flag: '🇨🇴', rank: 12 },
+  { name: 'Uruguay', flag: '🇺🇾', rank: 13 },    { name: 'Switzerland', flag: '🇨🇭', rank: 14 },
+  { name: 'Japan', flag: '🇯🇵', rank: 15 },      { name: 'Senegal', flag: '🇸🇳', rank: 16 },
+  { name: 'USA', flag: '🇺🇸', rank: 17 },        { name: 'Mexico', flag: '🇲🇽', rank: 18 },
+  { name: 'Iran', flag: '🇮🇷', rank: 19 },       { name: 'Australia', flag: '🇦🇺', rank: 20 },
+  { name: 'Austria', flag: '🇦🇹', rank: 21 },    { name: 'South Korea', flag: '🇰🇷', rank: 22 },
+  { name: 'Ecuador', flag: '🇪🇨', rank: 23 },    { name: 'Norway', flag: '🇳🇴', rank: 24 },
+  { name: 'Sweden', flag: '🇸🇪', rank: 25 },     { name: 'Canada', flag: '🇨🇦', rank: 26 },
+  { name: 'Egypt', flag: '🇪🇬', rank: 27 },      { name: 'Czechia', flag: '🇨🇿', rank: 28 },
+  { name: 'Turkey', flag: '🇹🇷', rank: 29 },     { name: 'Scotland', flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', rank: 30 },
+  { name: 'Panama', flag: '🇵🇦', rank: 31 },     { name: 'Ivory Coast', flag: '🇨🇮', rank: 32 },
+  { name: 'Algeria', flag: '🇩🇿', rank: 33 },    { name: 'Tunisia', flag: '🇹🇳', rank: 34 },
+  { name: 'Bosnia & Herzegovina', flag: '🇧🇦', rank: 35 }, { name: 'Paraguay', flag: '🇵🇾', rank: 36 },
+  { name: 'DR Congo', flag: '🇨🇩', rank: 37 },   { name: 'Qatar', flag: '🇶🇦', rank: 38 },
+  { name: 'South Africa', flag: '🇿🇦', rank: 39 }, { name: 'Saudi Arabia', flag: '🇸🇦', rank: 40 },
+  { name: 'Uzbekistan', flag: '🇺🇿', rank: 41 }, { name: 'Ghana', flag: '🇬🇭', rank: 42 },
+  { name: 'Iraq', flag: '🇮🇶', rank: 43 },       { name: 'Jordan', flag: '🇯🇴', rank: 44 },
+  { name: 'Cape Verde', flag: '🇨🇻', rank: 45 }, { name: 'Curaçao', flag: '🇨🇼', rank: 46 },
+  { name: 'Haiti', flag: '🇭🇹', rank: 47 },      { name: 'New Zealand', flag: '🇳🇿', rank: 48 },
 ];
 
 // Ranked strongest -> weakest, used to build balanced pots.
@@ -285,7 +285,13 @@ const NAME_ALIASES = {
   iriran: 'Iran',
   cotedivoire: 'Ivory Coast',
   turkiye: 'Turkey',
-  czechia: 'Czechia',
+  caboverde: 'Cape Verde',
+  bosniaandherzegovina: 'Bosnia & Herzegovina',
+  bosniaherzegovina: 'Bosnia & Herzegovina',
+  congodr: 'DR Congo',
+  drcongo: 'DR Congo',
+  democraticrepublicofthecongo: 'DR Congo',
+  democraticrepublicofcongo: 'DR Congo',
 };
 function matchCountry(apiName) {
   const norm = normalizeName(apiName);
